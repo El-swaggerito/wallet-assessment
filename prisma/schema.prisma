@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Wallet {
+  id                   String          @id
+  customerId           String
+  currency             String
+  availableBalanceKobo Int             @default(0)
+  transactions         Transaction[]
+  events               ProviderEvent[]
+}
+
+model Transaction {
+  id             Int      @id @default(autoincrement())
+  transactionRef String   @unique
+  walletId       String
+  amountKobo     Int
+  currency       String
+  status         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  wallet Wallet          @relation(fields: [walletId], references: [id])
+  events ProviderEvent[]
+}
+
+model ProviderEvent {
+  id             Int      @id @default(autoincrement())
+  eventId        String   @unique
+  transactionRef String
+  walletId       String
+  amountKobo     Int
+  currency       String
+  status         String
+  result         String
+  createdAt      DateTime @default(now())
+
+  wallet      Wallet      @relation(fields: [walletId], references: [id])
+  transaction Transaction @relation(fields: [transactionRef], references: [transactionRef])
+}
