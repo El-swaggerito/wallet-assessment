@@ -266,4 +266,68 @@ describe("Wallet events (e2e)", () => {
       })
       .expect(409);
   });
+
+  it("credits a transaction when the first event is successful", async () => {
+    await request(app.getHttpServer())
+      .post("/provider/events")
+      .send({
+        eventId: "E300",
+        transactionRef: "T300",
+        walletId: "W001",
+        amountKobo: 50000,
+        currency: "NGN",
+        status: "successful",
+      })
+      .expect(201);
+
+    const walletResponse = await request(app.getHttpServer())
+      .get("/wallets/W001")
+      .expect(200);
+
+    expect(walletResponse.body.availableBalanceKobo).toBe(50000);
+    expect(walletResponse.body.transactions).toHaveLength(1);
+    expect(walletResponse.body.transactions[0]).toEqual({
+      reference: "T300",
+      amountKobo: 50000,
+      currency: "NGN",
+      status: "successful",
+    });
+  });
+
+  it("does not allow a failed transaction to become successful later", async () => {
+    await request(app.getHttpServer())
+      .post("/provider/events")
+      .send({
+        eventId: "E400",
+        transactionRef: "T400",
+        walletId: "W001",
+        amountKobo: 75000,
+        currency: "NGN",
+        status: "failed",
+      })
+      .expect(201);
+
+    const lateSuccess = await request(app.getHttpServer())
+      .post("/provider/events")
+      .send({
+        eventId: "E401",
+        transactionRef: "T400",
+        walletId: "W001",
+        amountKobo: 75000,
+        currency: "NGN",
+        status: "successful",
+      })
+      .expect(201);
+
+    expect(lateSuccess.body.result).toBe("IGNORED_TERMINAL_STATE");
+    expect(lateSuccess.body.transactionStatus).toBe("failed");
+
+    const walletResponse = await request(app.getHttpServer())
+      .get("/wallets/W001")
+      .expect(200);
+
+    expect(walletResponse.body.availableBalanceKobo).toBe(0);
+    expect(walletResponse.body.transactions[0].status).toBe("failed");
+  });
+
 });
