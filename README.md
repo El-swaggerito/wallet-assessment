@@ -1,118 +1,485 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Wallet Events Assessment
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A small NestJS and TypeScript API that processes incoming deposit events, maintains wallet transaction history and prevents duplicate credits.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Technology
 
-## Description
+- Node.js
+- TypeScript
+- NestJS
+- Prisma ORM
+- SQLite
+- Vitest
+- Supertest
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+SQLite was selected to keep the assessment self-contained and easy to run locally. It is sufficient for demonstrating persistence, idempotency and the required state transitions, but it does not provide the same production concurrency and locking model I would use with PostgreSQL.
 
-## Project setup
+## Requirements implemented
 
-```bash
-$ npm install
-```
+The application seeds:
 
-## Compile and run the project
+- Wallet ID: `W001`
+- Customer ID: `C001`
+- Currency: `NGN`
+- Opening balance: `0` kobo
 
-```bash
-# development
-$ npm run start
+Endpoints:
 
-# watch mode
-$ npm run start:dev
+- `POST /provider/events`
+- `GET /wallets/W001`
 
-# production mode
-$ npm run start:prod
-```
+Supported transaction statuses:
 
-## Run tests
+- `pending`
+- `successful`
+- `failed`
 
-```bash
-# unit tests
-$ npm run test
+Rules implemented:
 
-# e2e tests
-$ npm run test:e2e
+- Pending deposits appear in history but do not affect available balance.
+- A successful deposit credits the wallet once.
+- Failed deposits do not affect available balance.
+- Successful and failed states are terminal.
+- Repeated `eventId` values have no additional effect.
+- Multiple event IDs for the same `transactionRef` do not create duplicate credits.
+- Reused event IDs or transaction references with conflicting wallet, amount or currency are rejected.
+- Negative or zero amounts are rejected.
+- Unsupported currencies are rejected.
+- Unknown wallets are rejected.
+- Accepted state changes and no-op terminal events are recorded in `ProviderEvent`.
 
-# test coverage
-$ npm run test:cov
-```
+## Installation
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Install dependencies:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm install
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Create the database:
 
-## Observability
+```bash
+npx prisma migrate dev
+```
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+Generate the Prisma client:
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+```bash
+npx prisma generate
+```
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+Seed the wallet:
 
-This project is already instrumented. Create a free account at [observe.nestjs.com](https://observe.nestjs.com), add an application, and paste the generated app key and secret into the `ObserveModule.forRoot()` call in `src/app.module.ts`.
+```bash
+npx tsx prisma/seed.ts
+```
 
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
+Start the application:
 
-## Resources
+```bash
+npm run start:dev
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+The API runs on:
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```text
+http://localhost:3000
+```
 
-## Support
+## API examples
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+### Create a pending deposit
 
-## Stay in touch
+```bash
+curl -X POST http://localhost:3000/provider/events \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventId":"E001",
+    "transactionRef":"T001",
+    "walletId":"W001",
+    "amountKobo":250000,
+    "currency":"NGN",
+    "status":"pending"
+  }'
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Expected result:
 
-## License
+```json
+{
+  "accepted": true,
+  "duplicate": false,
+  "result": "RECORDED_PENDING",
+  "transactionStatus": "pending"
+}
+```
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+The wallet balance remains `0` because pending deposits are not available funds.
+
+### Mark the deposit successful
+
+```bash
+curl -X POST http://localhost:3000/provider/events \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventId":"E002",
+    "transactionRef":"T001",
+    "walletId":"W001",
+    "amountKobo":250000,
+    "currency":"NGN",
+    "status":"successful"
+  }'
+```
+
+Expected result:
+
+```json
+{
+  "accepted": true,
+  "duplicate": false,
+  "result": "CREDITED",
+  "transactionStatus": "successful"
+}
+```
+
+The wallet balance becomes `250000` kobo.
+
+### Read wallet state
+
+```bash
+curl http://localhost:3000/wallets/W001
+```
+
+Example response:
+
+```json
+{
+  "walletId": "W001",
+  "customerId": "C001",
+  "currency": "NGN",
+  "availableBalanceKobo": 250000,
+  "transactions": [
+    {
+      "reference": "T001",
+      "amountKobo": 250000,
+      "currency": "NGN",
+      "status": "successful"
+    }
+  ]
+}
+```
+
+## Required scenario behaviour
+
+### Pending followed by successful
+
+A pending `T001` for `250000` kobo appears in transaction history but does not change the available balance.
+
+When a later event marks `T001` as successful, the transaction is updated and the balance increases once to `250000` kobo.
+
+### Replaying the same successful event
+
+If the exact same `eventId` is received again, the existing event result is returned and no financial state is changed.
+
+The balance remains `250000` kobo.
+
+### Different event ID for the same successful transaction
+
+A different `eventId` for an already successful `transactionRef` is recorded for traceability but cannot credit the wallet again.
+
+The transaction remains successful and the balance remains unchanged.
+
+### Failed transaction
+
+A failed deposit is recorded in transaction history but does not affect the available balance.
+
+### Late pending event after success
+
+Because `successful` is terminal for this exercise, a later pending event for the same transaction is recorded as an ignored terminal-state event.
+
+It does not overwrite the successful status or alter the wallet balance.
+
+### Invalid or conflicting data
+
+Negative or zero amounts are rejected with `400 Bad Request`.
+
+If an existing `eventId` or `transactionRef` is reused with a conflicting wallet, amount or currency, the request is rejected with `409 Conflict`.
+
+## Testing
+
+Run unit tests:
+
+```bash
+npm test -- --run
+```
+
+Run end-to-end tests:
+
+```bash
+npm run test:e2e
+```
+
+Build the project:
+
+```bash
+npm run build
+```
+
+At submission time, all automated checks passed successfully.
+
+The end-to-end suite covers:
+
+- pending followed by successful
+- replaying the same successful event
+- a different successful event ID for the same transaction
+- failed transactions
+- late pending events after success
+- negative amounts
+- conflicting transaction amounts
+- unknown wallets
+- unsupported currencies
+- conflicting reused event IDs
+- transactions whose first event is successful
+- attempted success after a terminal failed state
+
+## Design
+
+### Transaction identity
+
+`transactionRef` identifies the logical financial transaction.
+
+`eventId` identifies an individual message received from the fictional provider.
+
+Several provider events can therefore refer to one transaction without creating multiple transaction-history entries or multiple wallet credits.
+
+For example:
+
+```text
+E001 -> T001 -> pending
+E002 -> T001 -> successful
+E003 -> T001 -> successful
+```
+
+There is still only one logical `T001` transaction.
+
+### Transaction state
+
+For this exercise, the supported transitions are:
+
+```text
+new -> pending
+new -> successful
+new -> failed
+
+pending -> successful
+pending -> failed
+```
+
+`successful` and `failed` are terminal.
+
+Later events do not overwrite a terminal transaction or alter the balance.
+
+A conflicting terminal event is still retained in the provider-event audit record so that contradictory provider messages remain traceable.
+
+### Duplicate protection
+
+The database has unique constraints for:
+
+- `eventId`
+- `transactionRef`
+
+An identical replay of an existing event has no additional effect.
+
+A different event for an already successful transaction cannot cause another credit.
+
+The balance is only incremented when the logical transaction first enters the successful state.
+
+### Audit trail
+
+Provider events are stored separately from logical transactions.
+
+This provides a trace of what the provider sent, including duplicate events, no-op events and events received after a transaction has already reached a terminal state.
+
+Transaction history returned by the wallet endpoint represents logical financial transactions rather than every webhook message.
+
+## Concurrency and production limitations
+
+The solution uses SQLite because it keeps the assessment small and reproducible.
+
+Prisma transactions are used to group related operations, such as:
+
+- changing transaction state
+- updating the wallet balance
+- recording the provider event
+
+This prevents those writes from being deliberately committed independently within one processing operation.
+
+The current implementation also uses database uniqueness constraints for `eventId` and `transactionRef`.
+
+However, I do not claim that the SQLite implementation provides production-grade protection against two application instances attempting the same pending-to-successful transition at exactly the same time.
+
+With PostgreSQL, I would use:
+
+- database transactions
+- unique constraints
+- row-level locking such as `SELECT ... FOR UPDATE`, or an equivalent atomic conditional update
+- explicit transaction-state transition rules
+- an append-only financial ledger or equivalent auditable balance-movement model
+
+Only one concurrent request should be permitted to successfully transition a transaction into `successful`, and only that transition should produce the wallet credit.
+
+## Database failure and recovery
+
+Financial state and provider-event processing should not be treated as unrelated independent writes.
+
+In this implementation, related changes are grouped in a Prisma transaction so that they commit together or roll back together.
+
+In a production architecture with asynchronous processing, I would persist received events durably and use a processing state or transactional outbox pattern.
+
+If processing failed part-way through, the event could then be retried safely through the same idempotent logic instead of manually changing the wallet balance.
+
+## Real provider webhook authentication
+
+A provider-supplied status such as `successful` would not be trusted on its own in a real bank integration.
+
+I would verify:
+
+- HTTPS transport
+- provider cryptographic signature
+- webhook timestamp or nonce
+- replay protection
+- provider transaction identifier
+- expected internal transaction
+- customer or wallet mapping
+- exact amount
+- exact currency
+- destination account or virtual account where relevant
+
+Where appropriate, I would also confirm the transaction directly through the provider's trusted API before changing internal financial state.
+
+## Balance discrepancy investigation
+
+If the displayed balance differed from transaction history, my first actions would be read-only.
+
+I would inspect:
+
+- wallet record
+- transaction history
+- provider-event records
+- transaction state changes
+- provider references
+- timestamps
+- application logs
+- previous reconciliation information
+- previous balance adjustments
+
+I would preserve:
+
+- original webhook payload
+- webhook headers and signature information
+- event IDs
+- transaction references
+- provider references
+- timestamps
+- application logs
+- database audit information
+- previous operator actions
+
+I would not initially replay events, modify transaction status or directly change the wallet balance.
+
+Before approving a correction, operations staff should be able to see:
+
+- customer
+- wallet
+- current balance
+- transaction amount
+- currency
+- internal reference
+- provider reference
+- internal status
+- provider-reported status
+- event timeline
+- duplicate or conflicting events
+- reconciliation status
+- previous adjustments
+- reason for the proposed correction
+- approval trail
+
+## Missing internal transaction reconciliation
+
+If the provider reported a successful transaction that was missing internally, I would first search using:
+
+- provider transaction reference
+- internal transaction reference
+- event ID
+- customer
+- wallet
+- amount
+- currency
+- approximate transaction time
+
+I would then inspect:
+
+- webhook-ingress logs
+- application errors
+- retry or dead-letter queues
+- database audit records
+- previous reconciliation runs
+
+I would query the provider through its trusted API and independently verify the transaction identity, customer or destination account, amount, currency and settlement state.
+
+If the payment were genuine and internal processing had failed, I would pass it through the same controlled and idempotent transaction-processing path used for normal events.
+
+I would not blindly replay a payment or directly overwrite the wallet balance.
+
+## Assumptions
+
+- The exercise processes incoming deposits only.
+- NGN is the only accepted currency.
+- `amountKobo` must be a positive integer.
+- `successful` and `failed` are terminal states.
+- `transactionRef` identifies a logical deposit.
+- `eventId` identifies a provider event.
+- Transaction history contains one record per logical transaction.
+- Conflicting terminal events are retained for traceability but do not change financial state.
+- Real provider authentication is outside the scope of the exercise.
+- No frontend or deployment is required.
+
+## Known limitations
+
+- SQLite is used instead of PostgreSQL.
+- There is no production authentication or authorisation.
+- There is no real bank-provider integration.
+- Provider signatures are not verified because the provider is fictional.
+- There is no distributed locking or multi-instance concurrency guarantee.
+- Wallet balance is stored directly rather than being derived from a full double-entry ledger.
+- No operations dashboard is included because the exercise does not require a frontend.
+- The implementation is intentionally small and focused on the assessment requirements.
+
+## One improvement I would make next
+
+The next improvement would be moving persistence to PostgreSQL and making the pending-to-successful transition explicitly concurrency-safe using row-level locking or an atomic conditional update.
+
+I would also introduce an append-only ledger for balance movements so that wallet balances could be independently reconstructed and reconciled from financial entries rather than relying only on a stored balance field.
+
+## Thought process
+
+The detailed answers to the assessment's design and operational questions are in `THOUGHT_PROCESS.md`.
+
+This covers:
+
+- concurrent duplicate-credit protection
+- database failure recovery
+- webhook authenticity
+- balance discrepancy investigation
+- reconciliation of provider transactions missing internally
+
+## Time spent
+
+Approximately forty five minutes across implementation, testing and documentation.
+
+## AI and documentation usage
+
+I used AI assistance and technical documentation during the exercise, mainly for implementation guidance, reviewing edge cases and helping structure tests and documentation.
+
+I personally ran and verified the API behaviour, manual requests, automated tests and production build. I also reviewed the submitted code and can explain the implementation, design choices, trade-offs and known limitations.
